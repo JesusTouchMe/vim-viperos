@@ -81,7 +81,8 @@ int main(int argc, char** argv) {
             if (input_buf[0] == 'h') {
                 if (cursor_col > 0) cursor_col--;
             } else if (input_buf[0] == 'l') {
-                if (cursor_col < (int) strlen(fb.lines[cursor_line])) cursor_col++;
+                if (cursor_col < (int)strlen(fb.lines[cursor_line]) - 1)
+                    cursor_col++;
             } else if (input_buf[0] == 'j') {
                 if (cursor_line < fb.line_count - 1) {
                     cursor_line++;
@@ -97,13 +98,19 @@ int main(int argc, char** argv) {
             }
         }
 
+        if (cursor_col >= strlen(fb.lines[cursor_line])) {
+            cursor_col = strlen(fb.lines[cursor_line]) - 1;
+        }
+
         struct dimensions screen_size = tui_get_screen_size();
 
+        /*
         if (cursor_line >= scroll + screen_size.height)
             scroll = cursor_line - screen_size.height + 1;
 
         if (cursor_line < scroll)
             scroll = cursor_line;
+            */
 
         if (scroll < 0) scroll = 0;
         int max_scroll = fb.line_count - screen_size.height;
@@ -111,10 +118,26 @@ int main(int argc, char** argv) {
 
         tui_clear();
 
-        int y = 0;
-        int visual_cursor_x = 0;
-        int visual_cursor_y = 0;
+        int max_chars = screen_size.width - 5;
 
+        int global_cursor_y = 0;
+        for (int j = 0; j < cursor_line; j++) {
+            size_t len = strlen(fb.lines[j]);
+            global_cursor_y += (len + max_chars - 1) / max_chars;
+        }
+        global_cursor_y += cursor_col / max_chars;
+
+        int visual_cursor_x = 5 + (cursor_col % max_chars);
+        int visual_cursor_y = global_cursor_y - scroll;
+
+        if (visual_cursor_y >= screen_size.height)
+            scroll = global_cursor_y - screen_size.height + 1;
+
+        if (visual_cursor_y < 0)
+            scroll = global_cursor_y;
+
+
+        int y = 0;
         for (int i = scroll; i < fb.line_count && y < screen_size.height; i++) {
             const char* line = fb.lines[i];
             size_t line_len = strlen(line);
@@ -129,14 +152,8 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                int max_chars = screen_size.width - 5;
                 for (int x = 0; x < max_chars && start + x < line_len; x++) {
                     tui_put(x + 5, y, line[start + x]);
-                }
-
-                if (i == cursor_line && cursor_col >= start && cursor_col < start + max_chars) {
-                    visual_cursor_y = y;
-                    visual_cursor_x = 5 + cursor_col - start;
                 }
 
                 start += max_chars;
@@ -144,13 +161,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        if (visual_cursor_y >= screen_size.height)
-            scroll += visual_cursor_y - screen_size.height + 1;
-        if (visual_cursor_y < 0)
-            scroll += visual_cursor_y;
-        if (scroll < 0) scroll = 0;
-
-        tui_set_invert(visual_cursor_x, visual_cursor_y - scroll, true);
+        tui_set_invert(visual_cursor_x, visual_cursor_y, true);
 
         tui_render();
     }
