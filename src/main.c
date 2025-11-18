@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
                     cursor_col--;
             } else if (input_buf[0] == 'l') {
                 int len = fb_line_length(&fb, cursor_line);
-                if (cursor_col < len)
+                if (cursor_col < len - 1)
                     cursor_col++;
             } else if (input_buf[0] == 'j') {
                 if (cursor_line < fb.line_count - 1) {
@@ -137,18 +137,20 @@ int main(int argc, char** argv) {
         int visual_cursor_x = 5 + (cursor_col % max_chars);
         int visual_cursor_y = global_cursor_y - scroll;
 
-        if (visual_cursor_y >= screen_size.height)
-            scroll = global_cursor_y - screen_size.height + 1;
+        int visual_height = screen_size.height - 1;
+
+        if (visual_cursor_y >= visual_height)
+            scroll = global_cursor_y - visual_height + 1;
 
         if (visual_cursor_y < 0)
             scroll = global_cursor_y;
 
         int y = 0;
-        for (int i = scroll; i < fb.line_count && y < screen_size.height; i++) {
+        for (int i = scroll; i < fb.line_count && y < visual_height; i++) {
             int line_len = fb_line_length(&fb, i);
             int start = 0;
 
-            while ((start < line_len || start == 0) && y < screen_size.height) {
+            while ((start < line_len || start == 0) && y < visual_height) {
                 if (start == 0) {
                     char numbuf[8];
                     snprintf(numbuf, sizeof(numbuf), "%-4d", i + 1);
@@ -167,6 +169,22 @@ int main(int argc, char** argv) {
         }
 
         tui_set_invert(visual_cursor_x, visual_cursor_y, true);
+
+        // status line at the bottom
+        // i should really make this code neater and use functions like normal human
+
+        {
+            char pos[32];
+            int len = snprintf(pos, sizeof(pos), "%d,%d", cursor_line + 1, cursor_col + 1);
+            int start_x = screen_size.width - len;
+            if (start_x < 0) start_x = 0;
+
+            int y = screen_size.height - 1;
+
+            for (int i = 0; i < len && start_x + i < screen_size.width; i++) {
+                tui_put(start_x + i, y, pos[i]);
+            }
+        }
 
         tui_render();
     }
