@@ -74,56 +74,63 @@ int main(int argc, char** argv) {
 
     char input_buf[8];
     while (1) {
+        bool op_dl = false; // vim operator 'dl' with 'x' as a shortcut for it. for now, we only support the shortcut
+
         int n = read_nonblocking(STDIN_FILENO, input_buf, sizeof(input_buf));
         if (n > 0) {
             if (input_buf[0] == 'q') break;
 
             if (input_buf[0] == 'h') {
-                if (cursor_col > 0) cursor_col--;
+                if (cursor_col > 0)
+                    cursor_col--;
             } else if (input_buf[0] == 'l') {
-                if (cursor_col < (int)strlen(fb.lines[cursor_line]) - 1)
+                int len = fb_line_length(&fb, cursor_line);
+                if (cursor_col < len)
                     cursor_col++;
             } else if (input_buf[0] == 'j') {
                 if (cursor_line < fb.line_count - 1) {
                     cursor_line++;
-                    if (cursor_col > (int) strlen(fb.lines[cursor_line]))
-                        cursor_col = strlen(fb.lines[cursor_line]);
+                    int len = fb_line_length(&fb, cursor_line);
+                    if (cursor_col > len) cursor_col = len;
                 }
             } else if (input_buf[0] == 'k') {
                 if (cursor_line > 0) {
                     cursor_line--;
-                    if (cursor_col > (int) strlen(fb.lines[cursor_line]))
-                        cursor_col = strlen(fb.lines[cursor_line]);
+                    int len = fb_line_length(&fb, cursor_line);
+                    if (cursor_col > len) cursor_col = len;
                 }
+            } else if (input_buf[0] == 'x') {
+                op_dl = true;
             }
         }
 
-        if (cursor_col >= strlen(fb.lines[cursor_line])) {
-            cursor_col = strlen(fb.lines[cursor_line]) - 1;
-        }
+        int line_len_current = fb_line_length(&fb, cursor_line);
+        if (cursor_col > line_len_current) cursor_col = line_len_current;
+        if (cursor_col < 0) cursor_col = 0;
+
+        fb_set_cursor_pos(&fb, cursor_line, cursor_col);
+
+        if (op_dl) fb_delete_char(&fb, cursor_line);
 
         struct dimensions screen_size = tui_get_screen_size();
-
-        /*
-        if (cursor_line >= scroll + screen_size.height)
-            scroll = cursor_line - screen_size.height + 1;
-
-        if (cursor_line < scroll)
-            scroll = cursor_line;
-            */
 
         if (scroll < 0) scroll = 0;
         int max_scroll = fb.line_count - screen_size.height;
         if (scroll > max_scroll) scroll = max_scroll;
 
-        tui_clear();
-
         int max_chars = screen_size.width - 5;
+        if (max_chars < 1) max_chars = 1;
+
+        tui_clear();
 
         int global_cursor_y = 0;
         for (int j = 0; j < cursor_line; j++) {
-            size_t len = strlen(fb.lines[j]);
-            global_cursor_y += (len + max_chars - 1) / max_chars;
+            int len = fb_line_length(&fb, j);
+            if (len <= 0) {
+                global_cursor_y += 1;
+            } else {
+                global_cursor_y += (len + max_chars - 1) / max_chars;
+            }
         }
         global_cursor_y += cursor_col / max_chars;
 
@@ -136,14 +143,12 @@ int main(int argc, char** argv) {
         if (visual_cursor_y < 0)
             scroll = global_cursor_y;
 
-
         int y = 0;
         for (int i = scroll; i < fb.line_count && y < screen_size.height; i++) {
-            const char* line = fb.lines[i];
-            size_t line_len = strlen(line);
-
+            int line_len = fb_line_length(&fb, i);
             int start = 0;
-            while (start < line_len && y < screen_size.height) {
+
+            while ((start < line_len || start == 0) && y < screen_size.height) {
                 if (start == 0) {
                     char numbuf[8];
                     snprintf(numbuf, sizeof(numbuf), "%-4d", i + 1);
@@ -153,7 +158,7 @@ int main(int argc, char** argv) {
                 }
 
                 for (int x = 0; x < max_chars && start + x < line_len; x++) {
-                    tui_put(x + 5, y, line[start + x]);
+                    tui_put(x + 5, y, fb_char_at(&fb, i, start + x));
                 }
 
                 start += max_chars;
@@ -166,6 +171,7 @@ int main(int argc, char** argv) {
         tui_render();
     }
 
+    save_file_buffer(&fb);
     close_file_buffer(&fb);
 
     return 0;
