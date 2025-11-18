@@ -11,7 +11,21 @@
 #include <termios.h>
 #include <unistd.h>
 
+enum editor_mode {
+    MODE_NORMAL,
+    MODE_INSERT,
+};
+
 static struct termios oldt;
+
+const char* editor_mode_str(enum editor_mode mode) {
+    switch (mode) {
+        case MODE_NORMAL:
+            return "NORMAL";
+        case MODE_INSERT:
+            return "INSERT";
+    }
+}
 
 void enable_raw_mode(void) {
     tcgetattr(STDIN_FILENO, &oldt);
@@ -68,49 +82,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    enum editor_mode mode = MODE_NORMAL;
+
     int scroll = 0;
     int cursor_line = 0;
     int cursor_col = 0;
 
     char input_buf[8];
     while (1) {
-        bool op_dl = false; // vim operator 'dl' with 'x' as a shortcut for it. for now, we only support the shortcut
-
         int n = read_nonblocking(STDIN_FILENO, input_buf, sizeof(input_buf));
-        if (n > 0) {
-            if (input_buf[0] == 'q') break;
-
-            if (input_buf[0] == 'h') {
-                if (cursor_col > 0)
-                    cursor_col--;
-            } else if (input_buf[0] == 'l') {
-                int len = fb_line_length(&fb, cursor_line);
-                if (cursor_col < len - 1)
-                    cursor_col++;
-            } else if (input_buf[0] == 'j') {
-                if (cursor_line < fb.line_count - 1) {
-                    cursor_line++;
-                    int len = fb_line_length(&fb, cursor_line);
-                    if (cursor_col > len) cursor_col = len;
-                }
-            } else if (input_buf[0] == 'k') {
-                if (cursor_line > 0) {
-                    cursor_line--;
-                    int len = fb_line_length(&fb, cursor_line);
-                    if (cursor_col > len) cursor_col = len;
-                }
-            } else if (input_buf[0] == 'x') {
-                op_dl = true;
-            }
+        if (n == 1 && input_buf[0] == 0x1B) {
+            mode = MODE_NORMAL;
+            goto skip_logic;
         }
-
-        int line_len_current = fb_line_length(&fb, cursor_line);
-        if (cursor_col > line_len_current) cursor_col = line_len_current;
-        if (cursor_col < 0) cursor_col = 0;
-
-        fb_set_cursor_pos(&fb, cursor_line, cursor_col);
-
-        if (op_dl) fb_delete_char(&fb, cursor_line);
 
         struct dimensions screen_size = tui_get_screen_size();
 
@@ -122,6 +106,91 @@ int main(int argc, char** argv) {
         if (max_chars < 1) max_chars = 1;
 
         tui_clear();
+
+        if (mode == MODE_NORMAL) {
+            bool op_dl = false; // vim operator 'dl' with 'x' as a shortcut for it. for now, we only support the shortcut
+            if (n > 0) {
+                if (input_buf[0] == 'q') break;
+
+                if (input_buf[0] == 'i') {
+                    mode = MODE_INSERT;
+                    goto skip_logic;
+                }
+
+                if (input_buf[0] == 'h') {
+                    if (cursor_col > 0)
+                        cursor_col--;
+                } else if (input_buf[0] == 'l') {
+                    int len = fb_line_length(&fb, cursor_line);
+                    if (cursor_col < len - 1)
+                        cursor_col++;
+                } else if (input_buf[0] == 'j') {
+                    if (cursor_line < fb.line_count - 1) {
+                        cursor_line++;
+                        int len = fb_line_length(&fb, cursor_line);
+                        if (cursor_col > len) cursor_col = len;
+                    }
+                } else if (input_buf[0] == 'k') {
+                    if (cursor_line > 0) {
+                        cursor_line--;
+                        int len = fb_line_length(&fb, cursor_line);
+                        if (cursor_col > len) cursor_col = len;
+                    }
+                } else if (input_buf[0] == 'x') {
+                    op_dl = true;
+                }
+            }
+
+            fb_set_cursor_pos(&fb, cursor_line, cursor_col);
+
+            int line_len_current = fb_line_length(&fb, cursor_line);
+            if (cursor_col > line_len_current) cursor_col = line_len_current;
+            if (cursor_col < 0) cursor_col = 0;
+
+            if (op_dl) fb_delete_char(&fb, cursor_line);
+        } else if (mode == MODE_INSERT) {
+            if (n > 0) { // the arrow key shit
+                if (n >= 3 && input_buf[0] == 0x1B && input_buf[1] == '[') {
+                    char key = input_buf[2];
+                    if (key == 'A') {
+                        if (cursor_line > 0) {
+                            cursor_line--;
+                            int len = fb_line_length(&fb, cursor_line);
+                            if (cursor_col > len) cursor_col = len;
+                        }
+                    } else if (key == 'B') {
+                        if (cursor_line < fb.line_count - 1) {
+                            cursor_line++;
+                            int len = fb_line_length(&fb, cursor_line);
+                            if (cursor_col > len) cursor_col = len;
+                        }
+                    } else if (key == 'C') {
+                        int len = fb_line_length(&fb, cursor_line);
+                        if (cursor_col < len)
+                            cursor_col++;
+                    } else if (key == 'D') {
+                        if (cursor_col > 0)
+                            cursor_col--;
+                    }
+                } else {
+                    for (int i = 0; i < n; i++) {
+                        if (input_buf[i] >= 32 && input_buf[i] <= 126) {
+                            fb_insert_char(&fb, cursor_line, input_buf[i]);
+                            cursor_col++;
+                            fb_set_cursor_pos(&fb, cursor_line, cursor_col);
+                        }
+                    }
+                }
+            }
+
+            fb_set_cursor_pos(&fb, cursor_line, cursor_col);
+
+            int line_len_current = fb_line_length(&fb, cursor_line);
+            if (cursor_col > line_len_current) cursor_col = line_len_current;
+            if (cursor_col < 0) cursor_col = 0;
+        }
+
+        skip_logic:
 
         int global_cursor_y = 0;
         for (int j = 0; j < cursor_line; j++) {
@@ -183,6 +252,16 @@ int main(int argc, char** argv) {
 
             for (int i = 0; i < len && start_x + i < screen_size.width; i++) {
                 tui_put(start_x + i, y, pos[i]);
+            }
+
+            start_x -= 16;
+
+            for (int i = 0; i < n; i++) {
+                char c = input_buf[i];
+                if (c == 0x1B) c = '^';
+                else if (c < 32 || c > 126) c = '?';
+
+                tui_put(start_x + i, y, c);
             }
         }
 

@@ -30,6 +30,8 @@ int fb_line_length(struct file_buffer* fb, int line); // -1 is out of bounds
 
 void fb_set_cursor_pos(struct file_buffer* fb, int line, int col); // clamp if out of bounds
 
+void fb_insert_char(struct file_buffer* fb, int line, char c);
+
 void fb_delete_char(struct file_buffer* fb, int line); // silently ignore if out of bounds
 
 #endif //FILEBUF_H

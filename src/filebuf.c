@@ -195,6 +195,32 @@ void fb_set_cursor_pos(struct file_buffer* fb, int line, int col) {
     lb_set_cursor_pos(&fb->lines[line], col);
 }
 
+static void lb_insert_char(struct line_buffer* line, char c) {
+    if (line->gap_start >= line->gap_end) {
+        int gap_size = (line->len / 2) + 8;
+        char* new_buf = malloc(line->len + gap_size);
+        if (new_buf == NULL) return; // OOM
+
+        memcpy(new_buf, line->buf, line->gap_start);
+        int after_len = line->len - line->gap_end;
+        memcpy(new_buf + line->gap_start + gap_size,
+               line->buf + line->gap_end,
+               after_len);
+
+        free(line->buf);
+        line->buf = new_buf;
+        line->gap_end = line->gap_start + gap_size;
+        line->len += gap_size;
+    }
+
+    line->buf[line->gap_start++] = c;
+}
+
+void fb_insert_char(struct file_buffer* fb, int line, char c) {
+    if (line < 0 || line >= fb->line_count) return;
+    lb_insert_char(&fb->lines[line], c);
+}
+
 static void lb_delete_char(struct line_buffer* line) {
     if (line->gap_end >= line->len) return;
     line->gap_end++;
