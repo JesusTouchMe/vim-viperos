@@ -2,13 +2,9 @@
 
 #include "tui.h"
 
-#include <sys/ioctl.h>
-
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 struct cell {
     char c;
@@ -21,36 +17,7 @@ struct screen {
     struct cell* cells;
 };
 
-struct dimensions g_terminal_size;
 struct screen g_screen;
-
-//NOTE: maybe the terminal related operations should be their own module
-
-static void get_terminal_size(void) {
-    struct winsize ws = {0};
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0 || ws.ws_row == 0) {
-        ws.ws_col = 80;
-        ws.ws_row = 24;
-    }
-    g_terminal_size.width = ws.ws_col;
-    g_terminal_size.height = ws.ws_row;
-}
-
-static void terminal_clear(void) {
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-}
-
-static void terminal_move_home(void) {
-    write(STDOUT_FILENO, "\x1b[H", 3);
-}
-
-static void terminal_hide_cursor(void) {
-    write(STDOUT_FILENO, "\x1b[?25l", 6);
-}
-
-static void terminal_show_cursor(void) {
-    write(STDOUT_FILENO, "\x1b[?25h", 6);
-}
 
 static void screen_reallocate(void) {
     free(g_screen.cells);
@@ -64,14 +31,8 @@ static void screen_reallocate(void) {
 }
 
 static void screen_resize(void) {
-    get_terminal_size();
-    g_screen.size = g_terminal_size;
+    g_screen.size = term_get_size();
     screen_reallocate();
-}
-
-static void handle_resize(int sig) {
-    (void) sig;
-    screen_resize();
 }
 
 static bool cell_equal(struct cell* a, struct cell* b) {
@@ -79,37 +40,35 @@ static bool cell_equal(struct cell* a, struct cell* b) {
 }
 
 static void draw_cell(int x, int y, struct cell* cell) {
-    char seq[64];
-    int n = snprintf(seq, sizeof(seq), "\x1b[%d;%dH", y + 1, x + 1);
-    write(STDOUT_FILENO, seq, n);
+    term_set_cursor_pos(y + 1, x + 1);
 
     if (cell->invert) {
-        write(STDOUT_FILENO, "\x1b[7m", 4);
-        write(STDOUT_FILENO, &cell->c, 1);
-        write(STDOUT_FILENO, "\x1b[0m", 4);
+        term_fmt_reverse(true);
+        term_write(cell->c);
+        term_fmt_reverse(false);
     } else {
-        write(STDOUT_FILENO, &cell->c, 1);
+        term_write(cell->c);
     }
 }
 
 void tui_init(void) {
-    terminal_hide_cursor();
-    get_terminal_size();
-    g_screen.size = g_terminal_size;
+    term_hide_cursor();
+    term_force_update_size();
+    g_screen.size = term_get_size();
     g_screen.prev_cells = NULL;
     g_screen.cells = NULL;
     screen_reallocate();
 
-    signal(SIGWINCH, handle_resize);
+    term_resize_handler(screen_resize);
 }
 
 void tui_destroy(void) {
-    terminal_show_cursor();
-    terminal_clear();
+    term_show_cursor();
+    term_clear();
     free(g_screen.prev_cells);
     free(g_screen.cells);
 
-    write(STDOUT_FILENO, "\n", 1);
+    term_write('\n');
 }
 
 struct dimensions tui_get_screen_size(void) {
@@ -134,7 +93,7 @@ void tui_set_invert(int x, int y, bool invert) {
 }
 
 void tui_render(void) {
-    terminal_move_home();
+    term_move_home();
 
     for (int y = 0; y < g_screen.size.height; y++) {
         for (int x = 0; x < g_screen.size.width; x++) {
@@ -145,6 +104,4 @@ void tui_render(void) {
             }
         }
     }
-
-    fflush(stdout); // is this needed?
 }

@@ -3,12 +3,9 @@
 #ifndef TUI_H
 #define TUI_H 1
 
-#include <stdbool.h>
+#include "terminal.h"
 
-struct dimensions {
-    int width;
-    int height;
-};
+#include <stdbool.h>
 
 void tui_init(void);
 void tui_destroy(void);

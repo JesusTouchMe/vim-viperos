@@ -5,12 +5,14 @@ set(SOURCES
         src/main.c
         src/tui.c
         src/filebuf.c
+        src/terminal.c
 
 )
 
 set(HEADERS
         include/tui.h
         include/filebuf.h
+        include/terminal.h
 
 )
 

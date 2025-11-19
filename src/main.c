@@ -1,22 +1,19 @@
 // Copyright 2025 JesusTouchMe
 
 #include "filebuf.h"
+#include "terminal.h"
 #include "tui.h"
 
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <termios.h>
 #include <unistd.h>
 
 enum editor_mode {
     MODE_NORMAL,
     MODE_INSERT,
 };
-
-static struct termios oldt;
 
 const char* editor_mode_str(enum editor_mode mode) {
     switch (mode) {
@@ -25,19 +22,6 @@ const char* editor_mode_str(enum editor_mode mode) {
         case MODE_INSERT:
             return "INSERT";
     }
-}
-
-void enable_raw_mode(void) {
-    tcgetattr(STDIN_FILENO, &oldt);
-    struct termios newt = oldt;
-    newt.c_lflag &= ~(ICANON | ECHO);
-    newt.c_cc[VMIN] = 1;
-    newt.c_cc[VTIME] = 0;
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-}
-
-void disable_raw_mode(void) {
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 }
 
 ssize_t read_nonblocking(int fd, char* buf, size_t size) {
@@ -57,7 +41,7 @@ ssize_t read_nonblocking(int fd, char* buf, size_t size) {
 
 void cleanupatexit() {
     tui_destroy();
-    disable_raw_mode();
+    term_disable_raw();
 }
 
 void termneatly(int sig) {
@@ -69,7 +53,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    enable_raw_mode();
+    term_enable_raw();
     tui_init();
 
     atexit(cleanupatexit);
