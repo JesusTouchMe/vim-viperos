@@ -5,10 +5,12 @@
 #include <sys/ioctl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
 
-static struct termios g_oldt;
+static struct termios g_orig_term;
+static struct termios g_curr_term;
 static struct dimensions g_term_size;
 static void (*g_resize_handler)(void);
 
@@ -23,9 +25,17 @@ static void term_update_size(int sig) {
     if (g_resize_handler != NULL) g_resize_handler();
 }
 
+static void term_atexit(void) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &g_orig_term);
+}
+
 void term_init(void) {
-    tcgetattr(STDIN_FILENO, &g_oldt);
+    tcgetattr(STDIN_FILENO, &g_orig_term);
     signal(SIGWINCH, term_update_size);
+
+    g_curr_term = g_orig_term;
+
+    atexit(term_atexit);
 }
 
 void term_force_update_size(void) {
@@ -41,15 +51,17 @@ void term_resize_handler(void (*cb)(void)) {
 }
 
 void term_enable_raw(void) {
-    struct termios newt = g_oldt;
-    newt.c_lflag &= ~(ICANON | ECHO);
-    newt.c_cc[VMIN] = 1;
-    newt.c_cc[VTIME] = 0;
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    g_curr_term.c_lflag &= ~(ICANON | ECHO);
+    g_curr_term.c_cc[VMIN] = 1;
+    g_curr_term.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &g_curr_term);
 }
 
 void term_disable_raw(void) {
-    tcsetattr(STDIN_FILENO, TCSANOW, &g_oldt);
+    g_curr_term.c_lflag |= ICANON | ECHO;
+    g_curr_term.c_cc[VMIN] = g_orig_term.c_cc[VMIN];
+    g_curr_term.c_cc[VTIME] = g_orig_term.c_cc[VTIME];
+    tcsetattr(STDIN_FILENO, TCSANOW, &g_curr_term);
 }
 
 void term_set_cursor_pos(int line, int col) {
