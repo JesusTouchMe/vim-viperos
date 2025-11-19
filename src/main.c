@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 enum editor_mode {
@@ -52,6 +53,8 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         return 1;
     }
+
+    term_init();
 
     term_enable_raw();
     tui_init();
@@ -227,14 +230,21 @@ int main(int argc, char** argv) {
         // i should really make this code neater and use functions like normal human
 
         {
+            int y = screen_size.height - 1;
+
+            const char* mode_str = editor_mode_str(mode);
+            int len = strlen(mode_str);
+
+            for (int i = 0; i < len; i++) {
+                tui_put(i, y, mode_str[i]);
+            }
+
             char pos[32];
-            int len = snprintf(pos, sizeof(pos), "%d,%d", cursor_line + 1, cursor_col + 1);
+            len = snprintf(pos, sizeof(pos), "%d,%d", cursor_line + 1, cursor_col + 1);
             int start_x = screen_size.width - len;
             if (start_x < 0) start_x = 0;
 
-            int y = screen_size.height - 1;
-
-            for (int i = 0; i < len && start_x + i < screen_size.width; i++) {
+            for (int i = 0; i < len; i++) {
                 tui_put(start_x + i, y, pos[i]);
             }
 
